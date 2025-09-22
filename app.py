@@ -4,59 +4,61 @@ from youtube_transcript_api import (
     NoTranscriptFound,
     TranscriptsDisabled
 )
-import youtube_transcript_api # Import the module itself
 import os
 
 app = Flask(__name__)
-
-# Add these diagnostic prints right after imports
-print(f"DEBUG: youtube_transcript_api module path: {youtube_transcript_api.__file__}")
-print(f"DEBUG: dir(youtube_transcript_api): {dir(youtube_transcript_api)}")
-print(f"DEBUG: Type of YouTubeTranscriptApi: {type(YouTubeTranscriptApi)}") # Keep this one, it was working fine before
-print(f"DEBUG: dir(YouTubeTranscriptApi): {dir(YouTubeTranscriptApi)}") # Keep this one too
-
 
 @app.route('/transcript', methods=['GET'])
 def get_transcript():
     video_id = request.args.get("video_id")
     lang = request.args.get("lang", "en") 
-
+    
     if not video_id:
         return jsonify({"error": "Missing video_id parameter"}), 400
 
+    ytt_api = YouTubeTranscriptApi() # Instantiate the API client
+
     try:
-        # 1. Try exact requested language
-        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=[lang])
-        text = " ".join([entry['text'] for entry in transcript])
+        # 1. Try to get the transcript for the exact requested language using the new API
+        fetched_transcript = ytt_api.fetch(video_id, languages=[lang])
+        
+        # The fetched_transcript object is iterable, yielding snippet dictionaries
+        text = " ".join([entry['text'] for entry in fetched_transcript])
+        
         return jsonify({
             "video_id": video_id,
-            "language_used": lang,
+            "language_used": fetched_transcript.language_code, # Use the actual language code from the fetched transcript
             "transcript": text
         })
 
     except NoTranscriptFound:
         try:
-            # 2. Try to fallback to another transcript
-            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-            chosen_transcript = None
+            # 2. If exact language not found, try to find a fallback using the new API
+            transcript_list = ytt_api.list(video_id) # Use ytt_api.list() to get a TranscriptList object
 
+            chosen_transcript_obj = None # This will be a Transcript object metadata
+
+            # Prioritize English variants if an English language was requested or defaulted to
             if lang.startswith("en"):
-                # Prefer English variants
-                for t in transcript_list:
-                    if t.language_code.startswith("en"):
-                        chosen_transcript = t
-                        break
+                try:
+                    # find_transcript can take a list of languages. We'll try common English variants.
+                    chosen_transcript_obj = transcript_list.find_transcript(['en', 'en-US', 'en-GB'])
+                except NoTranscriptFound:
+                    pass # Continue to look for any other language if English variants are not found
+            
+            # If no specific English or requested language found, try any available transcript.
+            # The TranscriptList is iterable, so we can get the first available one if any.
+            if chosen_transcript_obj is None and transcript_list:
+                chosen_transcript_obj = next(iter(transcript_list), None)
 
-            # If still none, pick the first available transcript
-            if chosen_transcript is None and transcript_list:
-                chosen_transcript = transcript_list[0]
-
-            if chosen_transcript:
-                transcript = chosen_transcript.fetch()
-                text = " ".join([entry['text'] for entry in transcript])
+            if chosen_transcript_obj:
+                # Fetch the actual transcript data using .fetch() on the Transcript object
+                transcript_data = chosen_transcript_obj.fetch() 
+                text = " ".join([entry['text'] for entry in transcript_data]) # Iterate over FetchedTranscriptSnippet objects
+                
                 return jsonify({
                     "video_id": video_id,
-                    "language_used": chosen_transcript.language_code,
+                    "language_used": chosen_transcript_obj.language_code,
                     "transcript": text
                 })
             else:
@@ -71,6 +73,7 @@ def get_transcript():
                 "video_id": video_id
             }), 403
         except Exception as e:
+            # Catch other exceptions like 'RequestBlocked' or 'IpBlocked' if not using proxies, or other network issues.
             return jsonify({
                 "error": "Transcript not available. Video might be unavailable, private, or blocked.",
                 "details": str(e),
