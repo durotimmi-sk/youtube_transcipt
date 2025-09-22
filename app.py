@@ -10,9 +10,11 @@ import os
 app = Flask(__name__)
 
 # Add these diagnostic prints right after imports
-print(f"DEBUG: youtube_transcript_api module version: {youtube_transcript_api.__version__}")
-print(f"DEBUG: Type of YouTubeTranscriptApi: {type(YouTubeTranscriptApi)}")
-print(f"DEBUG: dir(YouTubeTranscriptApi): {dir(YouTubeTranscriptApi)}")
+print(f"DEBUG: youtube_transcript_api module path: {youtube_transcript_api.__file__}")
+print(f"DEBUG: dir(youtube_transcript_api): {dir(youtube_transcript_api)}")
+print(f"DEBUG: Type of YouTubeTranscriptApi: {type(YouTubeTranscriptApi)}") # Keep this one, it was working fine before
+print(f"DEBUG: dir(YouTubeTranscriptApi): {dir(YouTubeTranscriptApi)}") # Keep this one too
+
 
 @app.route('/transcript', methods=['GET'])
 def get_transcript():
